@@ -20,13 +20,27 @@ endif
 all: check build test
 
 NO_DOCKER ?= 0
+
+ifeq ($(shell command -v podman > /dev/null 2>&1 ; echo $$? ), 0)
+	ENGINE=podman
+else ifeq ($(shell command -v docker > /dev/null 2>&1 ; echo $$? ), 0)
+	ENGINE=docker
+else
+	NO_DOCKER=1
+endif
+
+USE_DOCKER ?= 0
+ifeq ($(USE_DOCKER), 1)
+	ENGINE=docker	
+endif
+
 ifeq ($(NO_DOCKER), 1)
   DOCKER_CMD =
   IMAGE_BUILD_CMD = imagebuilder
 else
-  DOCKER_CMD := docker run --env GO111MODULE=$(GO111MODULE) --env GOFLAGS=$(GOFLAGS) --rm -v "$(PWD)":/go/src/github.com/openshift/machine-api-operator:Z -w /go/src/github.com/openshift/machine-api-operator golang:1.15
-#  DOCKER_CMD := docker run --env GO111MODULE=$(GO111MODULE) --env GOFLAGS=$(GOFLAGS) --rm -v "$(PWD)":/go/src/github.com/openshift/machine-api-operator:Z -w /go/src/github.com/openshift/machine-api-operator registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.15-openshift-4.6
-  IMAGE_BUILD_CMD = docker build
+  DOCKER_CMD := $(ENGINE) run --env GO111MODULE=$(GO111MODULE) --env GOFLAGS=$(GOFLAGS) --rm -v "$(PWD)":/go/src/github.com/openshift/machine-api-operator:Z  -w /go/src/github.com/openshift/machine-api-operator golang:1.15
+#  DOCKER_CMD := $(ENGINE) run --env GO111MODULE=$(GO111MODULE) --env GOFLAGS=$(GOFLAGS) --rm -v "$(PWD)":/go/src/github.com/openshift/machine-api-operator:Z -w /go/src/github.com/openshift/machine-api-operator registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.15-openshift-4.6
+  IMAGE_BUILD_CMD = $(ENGINE) build
 endif
 
 .PHONY: vendor
@@ -36,11 +50,7 @@ vendor:
 	go mod verify
 
 .PHONY: check
-check: lint fmt vet verify-codegen check-pkg test ## Run code validations
-
-.PHONY: check-pkg
-check-pkg:
-	./hack/verify-actuator-pkg.sh
+check: lint fmt vet verify-codegen test ## Run code validations
 
 .PHONY: build
 build: machine-api-operator nodelink-controller machine-healthcheck machineset vsphere ## Build binaries
@@ -126,8 +136,8 @@ image: ## Build docker image
 .PHONY: push
 push: ## Push image to docker registry
 	@echo -e "\033[32mPushing images...\033[0m"
-	docker push "$(IMAGE):$(VERSION)"
-	docker push "$(IMAGE):$(MUTABLE_TAG)"
+	$(ENGINE) push "$(IMAGE):$(VERSION)"
+	$(ENGINE) push "$(IMAGE):$(MUTABLE_TAG)"
 
 .PHONY: lint
 lint: ## Go lint your code
